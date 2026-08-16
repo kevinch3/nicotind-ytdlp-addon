@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { JobStore } from './job-store.js';
 import { createServer } from './server.js';
 import type { YtdlpConfig } from './resolve.js';
@@ -21,7 +22,10 @@ const config = (): YtdlpConfig => ({
 const stagingBase = process.env.YTDLP_ADDON_DOWNLOADS_DIR ?? '/data/downloads';
 const port = Number(process.env.YTDLP_ADDON_PORT ?? '8586');
 
-const jobs = new JobStore(stagingBase, config);
+// Persist the job ledger under the addon's data volume so a restart reports
+// in-flight downloads as failed rather than forgetting them (issue #515).
+const dataDir = process.env.YTDLP_ADDON_DATA_DIR ?? '/data';
+const jobs = new JobStore(stagingBase, config, {}, join(dataDir, 'jobs.db'));
 const app = createServer({ token, jobs });
 
 console.log(`yt-dlp addon listening on :${port}`);
