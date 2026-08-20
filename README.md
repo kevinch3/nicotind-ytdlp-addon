@@ -11,9 +11,19 @@ addons (archive.org, spotdl) win their URLs and yt-dlp takes everything else.
 ## How it works
 
 `POST /addon/v1/jobs {intent:'url', url}` spawns `yt-dlp` (extract-audio, embed metadata, skip
-unavailable playlist items), downloading into the addon's storage. Items flip `fileReady` and the
-bytes are served from `GET /addon/v1/jobs/:id/files/:itemId` — core's `AddonJobPoller` fetches them and
-runs the same organize → scan pipeline every source uses. YouTube bot-checks are mitigated by the
+unavailable playlist items), downloading into the addon's storage, and **reads its output as it
+runs** (parsed with `@nicotind/addon-sdk`'s `downloader-output` parsers): `[download] Downloading
+playlist: <name>` becomes the job's `title`, two `--print` markers (`TRACK_START::<artist - title>\t<path>`
+at `before_dl`, `TRACK_DONE::…` at `after_move`) become one item per video **in that order** — the
+path after the TAB pairs the landed file exactly — and when yt-dlp announced more items
+(`Downloading item N of M`) than ever reached a marker, the remainder are `unavailable` placeholders.
+So a 1-of-16 playlist reads "1 of 16", `partial`, with yt-dlp's own `ERROR:` lines, not a clean
+"Done 1 of 1" (NicotinD #585; the addon used to run with `stdio: 'ignore'` and glob staging).
+`--print` implies `--quiet`, so `--no-quiet` keeps the lines the title and count come from. Every
+yt-dlp line is also written to the addon's log, so `docker logs` has the transcript. Items flip
+`fileReady` and the bytes are served from `GET /addon/v1/jobs/:id/files/:itemId` — core's
+`AddonJobPoller` fetches them and runs the same organize → scan pipeline every source uses.
+`POST /addon/v1/jobs/:id/cancel` SIGTERMs yt-dlp and closes the job `cancelled`. YouTube bot-checks are mitigated by the
 **bgutil PO-token provider** run as a **sidecar**; the addon image bakes the paired
 `bgutil-ytdlp-pot-provider` yt-dlp plugin.
 
@@ -32,15 +42,15 @@ Then in NicotinD → **Extensions → Add addon**, register `http://<host>:8586`
 
 ## Configuration
 
-| Env var | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `YTDLP_ADDON_TOKEN` | **yes** | — | Bearer token core authenticates with |
-| `POT_PROVIDER_URL` | — | `http://127.0.0.1:4416` | bgutil PO-token provider sidecar base URL |
-| `YTDLP_ADDON_BINARY` | — | `yt-dlp` | yt-dlp binary path |
-| `YTDLP_ADDON_FORMAT` | — | — | yt-dlp format selector |
-| `YTDLP_ADDON_COOKIES` | — | — | Netscape cookies.txt path (unblocks a flagged IP) |
-| `YTDLP_ADDON_DOWNLOADS_DIR` | — | `/data/downloads` | staging dir |
-| `YTDLP_ADDON_PORT` | — | `8586` | HTTP listen port |
+| Env var                     | Required | Default                 | Purpose                                           |
+| --------------------------- | -------- | ----------------------- | ------------------------------------------------- |
+| `YTDLP_ADDON_TOKEN`         | **yes**  | —                       | Bearer token core authenticates with              |
+| `POT_PROVIDER_URL`          | —        | `http://127.0.0.1:4416` | bgutil PO-token provider sidecar base URL         |
+| `YTDLP_ADDON_BINARY`        | —        | `yt-dlp`                | yt-dlp binary path                                |
+| `YTDLP_ADDON_FORMAT`        | —        | —                       | yt-dlp format selector                            |
+| `YTDLP_ADDON_COOKIES`       | —        | —                       | Netscape cookies.txt path (unblocks a flagged IP) |
+| `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `/data/downloads`       | staging dir                                       |
+| `YTDLP_ADDON_PORT`          | —        | `8586`                  | HTTP listen port                                  |
 
 Only `GET /addon/v1/manifest` + `/health` are unauthenticated; every other route needs the bearer token.
 
