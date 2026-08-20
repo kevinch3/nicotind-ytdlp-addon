@@ -27,6 +27,11 @@ yt-dlp line is also written to the addon's log, so `docker logs` has the transcr
 **bgutil PO-token provider** run as a **sidecar**; the addon image bakes the paired
 `bgutil-ytdlp-pot-provider` yt-dlp plugin.
 
+The image pins **yt-dlp to the PyPI version current at build time** (`--build-arg YTDLP_VERSION`,
+resolved by CI). It used to be "latest", which a cached Docker layer silently froze for weeks while
+YouTube moved on — every media fetch 403'd (NicotinD #588). Rebuild the image to pick up a newer
+yt-dlp; a local build needs the arg: `docker build --build-arg YTDLP_VERSION=$(curl -fsS https://pypi.org/pypi/yt-dlp/json | python3 -c 'import sys,json;print(json.load(sys.stdin)["info"]["version"])') .`
+
 ## Run (Docker)
 
 ```bash
