@@ -70,3 +70,52 @@ jobs:
             YTDLP_VERSION=${{ steps.ytdlp.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # The bgutil PO-token provider sidecar (pot-provider/Dockerfile), moved here
+  # from NicotinD core's release (NicotinD #1315). It keeps core's image name
+  # and `release` tag so existing deployments' compose keeps resolving it; the
+  # spotdl addon runs the same image beside its own container. Built on every
+  # PR (no push) so a broken bump is caught before merge.
+  pot-provider:
+    name: pot-provider image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/nicotind-pot-provider
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # `release` is the tag every deployment's compose references; the
+      # `bgutil-<version>` tag names the upstream server a digest came from.
+      # No build-args: the pin is the Dockerfile's own ARG default, so there is
+      # one place to bump it (src/pot-provider-pin.test.ts pairs it with ours).
+      - name: Compute tags
+        id: tags
+        run: |
+          set -euo pipefail
+          bgutil=$(sed -n 's/^ARG BGUTIL_VERSION=//p' pot-provider/Dockerfile)
+          test -n "$bgutil"
+          echo "bgutil $bgutil"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ] || [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "tags=${IMAGE}:release,${IMAGE}:bgutil-${bgutil}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${IMAGE}:pr" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build (push on main / tags)
+        uses: docker/build-push-action@v6
+        with:
+          context: pot-provider
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag') }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=pot-provider-linux-amd64
+          cache-to: type=gha,mode=max,scope=pot-provider-linux-amd64

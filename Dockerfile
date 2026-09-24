@@ -3,7 +3,7 @@ FROM oven/bun:1.3.14
 
 # yt-dlp needs Python + ffmpeg; the bgutil PO-token provider *plugin* teaches
 # yt-dlp to fetch a token from the pot-provider sidecar. Pin both — the plugin
-# version must pair with the sidecar image (mirror the monorepo's BGUTIL_VERSION).
+# version must pair with the sidecar (pot-provider/Dockerfile, test-enforced).
 # `unzip` is required by the Deno installer below.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg ca-certificates curl unzip \
@@ -21,7 +21,7 @@ RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 # fetch 403'd and a 100-track playlist landed 1 (NicotinD #588). A version in
 # the layer's command line is what makes the cache key move with PyPI, and the
 # build log now states which yt-dlp shipped. BGUTIL_VERSION pins the provider
-# plugin to the pot-provider sidecar image (same default as the monorepo;
+# plugin to the pot-provider sidecar image (same default as pot-provider/;
 # override to move both in lockstep).
 ARG YTDLP_VERSION
 ARG BGUTIL_VERSION=1.3.1
