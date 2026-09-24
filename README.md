@@ -47,7 +47,20 @@ docker buildx imagetools inspect ghcr.io/kevinch3/nicotind-pot-provider:release 
   --format '{{ index .Image.Config.Labels "org.nicotind.bgutil.version" }}'
 ```
 
-Bump both `BGUTIL_VERSION` defaults (here and in the spotdl addon) together.
+Bump both `BGUTIL_VERSION` defaults (here and in the spotdl addon) together. The failure this guards
+against is a provider that *starts* while minting invalid tokens, so smoke-test a bump against
+YouTube's live attestation endpoint, not just "it builds":
+
+```bash
+docker build -t pot-test pot-provider
+docker run -d --name pot-test -p 14417:4416 pot-test
+curl -s -X POST http://127.0.0.1:14417/get_pot \
+  -H 'content-type: application/json' -d '{"content_binding":"dQw4w9WgXcQ"}'
+```
+
+A `poToken` + `expiresAt` in the response means the provider is genuinely talking to YouTube. Two
+deliberate deviations from upstream's `server/Dockerfile`, both so it builds without buildx: `/app` is
+chowned before dropping to the `node` user, and `NPM_CONFIG_CACHE` points at a writable path.
 
 The image pins **yt-dlp to the PyPI version current at build time** (`--build-arg YTDLP_VERSION`,
 resolved by CI). It used to be "latest", which a cached Docker layer silently froze for weeks while
