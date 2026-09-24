@@ -27,6 +27,41 @@ yt-dlp line is also written to the addon's log, so `docker logs` has the transcr
 **bgutil PO-token provider** run as a **sidecar**; the addon image bakes the paired
 `bgutil-ytdlp-pot-provider` yt-dlp plugin.
 
+## The PO-token provider image
+
+This repo also builds that sidecar: `pot-provider/Dockerfile` builds the upstream
+[bgutil server](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) from pinned source and the
+`pot-provider` CI job publishes it as **`ghcr.io/kevinch3/nicotind-pot-provider:release`** (plus
+`:bgutil-<version>`) on every push to `main`. It moved here from NicotinD core's release
+(NicotinD #1315) with its name and `release` tag unchanged, so existing compose files keep working.
+The [spotdl addon](https://github.com/kevinch3/nicotind-spotdl-addon) runs the same image beside its
+own container.
+
+The server's `ARG BGUTIL_VERSION` must equal the plugin pin in this repo's `Dockerfile` — a mismatch
+starts fine and silently breaks YouTube downloads. `src/pot-provider-pin.test.ts` fails the build on
+a mismatch, and the image carries the pin as the `org.nicotind.bgutil.version` label so the spotdl
+addon can check its own pin against the published artifact:
+
+```bash
+docker buildx imagetools inspect ghcr.io/kevinch3/nicotind-pot-provider:release \
+  --format '{{ index .Image.Config.Labels "org.nicotind.bgutil.version" }}'
+```
+
+Bump both `BGUTIL_VERSION` defaults (here and in the spotdl addon) together. The failure this guards
+against is a provider that *starts* while minting invalid tokens, so smoke-test a bump against
+YouTube's live attestation endpoint, not just "it builds":
+
+```bash
+docker build -t pot-test pot-provider
+docker run -d --name pot-test -p 14417:4416 pot-test
+curl -s -X POST http://127.0.0.1:14417/get_pot \
+  -H 'content-type: application/json' -d '{"content_binding":"dQw4w9WgXcQ"}'
+```
+
+A `poToken` + `expiresAt` in the response means the provider is genuinely talking to YouTube. Two
+deliberate deviations from upstream's `server/Dockerfile`, both so it builds without buildx: `/app` is
+chowned before dropping to the `node` user, and `NPM_CONFIG_CACHE` points at a writable path.
+
 The image pins **yt-dlp to the PyPI version current at build time** (`--build-arg YTDLP_VERSION`,
 resolved by CI). It used to be "latest", which a cached Docker layer silently froze for weeks while
 YouTube moved on — every media fetch 403'd (NicotinD #588). Rebuild the image to pick up a newer
