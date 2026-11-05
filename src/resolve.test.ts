@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
@@ -73,10 +73,10 @@ describe("buildArgs", () => {
       binaryPath: "yt-dlp",
     });
     expect(args).toContain(
-      "before_dl:TRACK_START::%(artist)s - %(title)s\t%(filename)s",
+      "before_dl:TRACK_START::%(artists.0,artist,uploader)s - %(title)s\t%(filename)s",
     );
     expect(args).toContain(
-      "after_move:TRACK_DONE::%(artist)s - %(title)s\t%(filepath)s",
+      "after_move:TRACK_DONE::%(artists.0,artist,uploader)s - %(title)s\t%(filepath)s",
     );
     // --print implies --quiet, which would silence "Downloading playlist:" / "item N of M".
     expect(args).toContain("--no-quiet");
@@ -163,5 +163,95 @@ describe("runYtdlp", () => {
     expect(run.cancel()).toBe(true);
     await run.done;
     expect(capture.killed).toBe("SIGTERM");
+  });
+});
+
+/**
+ * NicotinD #866. Runs the real yt-dlp over info dicts, because these rules are only
+ * as good as how yt-dlp reads them: the first draft of the title pattern looked right
+ * and read `[99] TE VAS` as an artist called `99] TE VAS`. No network.
+ */
+describe.skipIf(!Bun.which("yt-dlp"))("what yt-dlp makes of a video's metadata", () => {
+  const FIELDS = "%(artist)s|%(meta_artist)s|%(title)s|%(meta_date)s|%(artists.0,artist,uploader)s";
+
+  function read(info: Record<string, unknown>) {
+    const dir = mkdtempSync(join(tmpdir(), "ytdlp-meta-"));
+    try {
+      const file = join(dir, "video.info.json");
+      writeFileSync(
+        file,
+        JSON.stringify({
+          id: "x",
+          extractor: "youtube",
+          extractor_key: "Youtube",
+          webpage_url: "https://x",
+          webpage_url_basename: "watch",
+          ext: "mp4",
+          url: "https://x/a",
+          formats: [{ format_id: "1", url: "https://x/a", ext: "mp4" }],
+          uploader: "Uploader",
+          upload_date: "20150502",
+          ...info,
+        }),
+      );
+      const parse = buildArgs("u", "/stage", { binaryPath: "yt-dlp" }).flatMap((a, i, all) =>
+        all[i - 1] === "--parse-metadata" ? ["--parse-metadata", a] : [],
+      );
+      const r = Bun.spawnSync([
+        "yt-dlp",
+        "--ignore-config",
+        "--simulate",
+        "--load-info-json",
+        file,
+        ...parse,
+        "--print",
+        FIELDS,
+      ]);
+      const [artist, metaArtist, title, metaDate, folder] = r.stdout
+        .toString()
+        .trim()
+        .split("\n")
+        .at(-1)!
+        .split("|");
+      return { artist, metaArtist, title, metaDate, folder };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("takes the performer from a YouTube Music credit list, and the release year", () => {
+    const got = read({
+      title: "Volver a los 17",
+      artists: ["Sanampay", "A. ZITARROSA"],
+      release_year: 1997,
+    });
+    expect(got.metaArtist).toBe("Sanampay");
+    expect(got.folder).toBe("Sanampay");
+    expect(got.title).toBe("Volver a los 17");
+    expect(got.metaDate).toBe("1997");
+  });
+
+  it("does not read a bracketed chart position as an artist", () => {
+    const title = "[99] TE VAS - DJ LOCO CABANA-PERU FT. DVJ LUIS BRAVO";
+    const got = read({ title });
+    expect(got.artist).toBe("NA");
+    expect(got.title).toBe(title);
+    expect(got.folder).toBe("Uploader");
+  });
+
+  it("still splits a plain Artist - Title, hyphens included", () => {
+    expect(read({ title: "Lenny Kravitz - Low" })).toMatchObject({
+      artist: "Lenny Kravitz",
+      title: "Low",
+      folder: "Lenny Kravitz",
+    });
+    expect(read({ title: "Jay-Z - 99 Problems" })).toMatchObject({
+      artist: "Jay-Z",
+      title: "99 Problems",
+    });
+  });
+
+  it("leaves the date to the embed when there is no release year", () => {
+    expect(read({ title: "A - B" }).metaDate).toBe("NA");
   });
 });

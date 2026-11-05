@@ -19,6 +19,9 @@ path after the TAB pairs the landed file exactly — and when yt-dlp announced m
 (`Downloading item N of M`) than ever reached a marker, the remainder are `unavailable` placeholders.
 So a 1-of-16 playlist reads "1 of 16", `partial`, with yt-dlp's own `ERROR:` lines, not a clean
 "Done 1 of 1" (NicotinD #585; the addon used to run with `stdio: 'ignore'` and glob staging).
+The embedded tags take the first of YouTube's credited `artists` (the rest are often composers, and
+yt-dlp would join them all into one artist), the release year over the upload date, and an `Artist -
+Title` split only when the left side is not bracketed (NicotinD #866).
 `--print` implies `--quiet`, so `--no-quiet` keeps the lines the title and count come from. Every
 yt-dlp line is also written to the addon's log, so `docker logs` has the transcript. Items flip
 `fileReady` and the bytes are served from `GET /addon/v1/jobs/:id/files/:itemId` — core's
