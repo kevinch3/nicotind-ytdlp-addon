@@ -21,6 +21,9 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      # The metadata tests run the real yt-dlp and skip without it, and a test that
+      # skips in CI proves nothing about a rule only yt-dlp can read.
+      - run: pipx install yt-dlp
       - run: bun run test
 
   docker:

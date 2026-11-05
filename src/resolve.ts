@@ -66,11 +66,27 @@ export interface RunningResolve {
   cancel: () => boolean;
 }
 
+/** The performer, for paths and progress: never yt-dlp's comma-joined `artist`. */
+const TRACK_ARTIST = "%(artists.0,artist,uploader)s";
+
 /**
  * yt-dlp argument vector. Mirrors the retired in-process plugin: extract audio,
  * parse "Artist - Title" from the video title, embed metadata (so core reads real
  * tags — unlike tagless archive), skip unavailable playlist items. Adds the
  * bgutil PO-token provider extractor-arg and cookies when configured.
+ *
+ * Three metadata rules, each from a real wrong tag (NicotinD #866):
+ * - YouTube's `TITLE · ARTIST · COMPOSER` credits arrive as an `artists` list that
+ *   yt-dlp joins into `artist` with commas, so one album became a dozen artists.
+ *   The first entry is the performer: it names the folder and the embedded tag.
+ * - The title pattern refuses a bracketed left side, so `[99] TE VAS - DJ LOCO` is
+ *   not an artist called `[99] TE VAS`. It is anchored because yt-dlp searches: an
+ *   unanchored lookahead just skips the bracket and reads `99] TE VAS`. It allows
+ *   hyphens, or `Jay-Z - 99 Problems` would lose its artist.
+ * - The release year outranks YouTube's upload date, which is what the embed would
+ *   otherwise write as the date.
+ * Each `|` default is empty so a field that is absent matches nothing and writes
+ * nothing, instead of a literal `NA`.
  *
  * The output contract: two `--print` markers give one line per track —
  * `TRACK_START::<artist - title>\t<path>` once a video is selected for download
@@ -97,16 +113,20 @@ export function buildArgs(
     "--audio-quality",
     "0",
     "--parse-metadata",
-    "title:%(artist)s - %(title)s",
+    "title:^(?!\\[)(?P<artist>.+?) - (?P<title>.+)$",
+    "--parse-metadata",
+    "%(artists.0|)s:(?P<meta_artist>.+)",
+    "--parse-metadata",
+    "%(release_year|)s:(?P<meta_date>.+)",
     "--embed-metadata",
     "--paths",
     stagingDir,
     "-o",
-    "%(artist)s/%(album,playlist_title,uploader)s/%(title)s.%(ext)s",
+    `${TRACK_ARTIST}/%(album,playlist_title,uploader)s/%(title)s.%(ext)s`,
     "--print",
-    "before_dl:TRACK_START::%(artist)s - %(title)s\t%(filename)s",
+    `before_dl:TRACK_START::${TRACK_ARTIST} - %(title)s\t%(filename)s`,
     "--print",
-    "after_move:TRACK_DONE::%(artist)s - %(title)s\t%(filepath)s",
+    `after_move:TRACK_DONE::${TRACK_ARTIST} - %(title)s\t%(filepath)s`,
   ];
   if (cfg.format) args.push("--format", cfg.format);
   if (cfg.cookiesFile && existsSync(cfg.cookiesFile))
