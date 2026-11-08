@@ -83,6 +83,23 @@ docker run -d --name ytdlp-addon \
 
 Then in NicotinD → **Extensions → Add addon**, register `http://<host>:8586` with the same token.
 
+## Run without Docker
+
+Needs Bun and a `yt-dlp` on `PATH` (or `YTDLP_ADDON_BINARY`). No root: if you can't install
+yt-dlp with your package manager or a venv, its PyPI wheel runs directly with
+`PYTHONPATH=yt_dlp-<ver>-py3-none-any.whl python3 -m yt_dlp`; point `YTDLP_ADDON_BINARY` at a
+two-line wrapper script that does that.
+
+```bash
+bun install
+YTDLP_ADDON_TOKEN=<a-long-random-secret> bun run start
+```
+
+State goes to `$XDG_DATA_HOME/nicotind-ytdlp-addon` (`~/.local/share/nicotind-ytdlp-addon`)
+when `/data` isn't writable; set `YTDLP_ADDON_DATA_DIR` to put it elsewhere. To keep it running,
+a systemd user unit like NicotinD's own works the same way
+([NicotinD docs/bare-metal.md](https://github.com/kevinch3/NicotinD/blob/master/docs/bare-metal.md)).
+
 ## Configuration
 
 | Env var                     | Required | Default                 | Purpose                                           |
@@ -92,10 +109,12 @@ Then in NicotinD → **Extensions → Add addon**, register `http://<host>:8586`
 | `YTDLP_ADDON_BINARY`        | —        | `yt-dlp`                | yt-dlp binary path                                |
 | `YTDLP_ADDON_FORMAT`        | —        | —                       | yt-dlp format selector                            |
 | `YTDLP_ADDON_COOKIES`       | —        | —                       | Netscape cookies.txt path (unblocks a flagged IP) |
-| `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `/data/downloads`       | staging dir                                       |
+| `YTDLP_ADDON_DATA_DIR`      | —        | `/data`, else `~/.local/share/nicotind-ytdlp-addon` | job ledger (`jobs.db`), survives restarts |
+| `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `<data dir>/downloads`  | staging dir                                       |
 | `YTDLP_ADDON_PORT`          | —        | `8586`                  | HTTP listen port                                  |
 
-Only `GET /addon/v1/manifest` + `/health` are unauthenticated; every other route needs the bearer token.
+Only `GET /addon/v1/manifest` and `GET /addon/v1/health` are unauthenticated; every other route
+needs the bearer token.
 
 ## Develop
 
