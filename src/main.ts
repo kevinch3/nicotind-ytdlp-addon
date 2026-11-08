@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { prepareDirs, resolveDirs } from "./paths.js";
+import { listenAddress } from "./listen.js";
 import { JobStore } from "./job-store.js";
 import { createServer } from "./server.js";
 import { jsRuntimeFor, type YtdlpConfig } from "./resolve.js";
@@ -43,7 +44,7 @@ try {
   process.exit(1);
 }
 const stagingBase = dirs.downloadsDir;
-const port = Number(process.env.YTDLP_ADDON_PORT ?? "8586");
+const { hostname, port } = listenAddress(process.env);
 
 // Persist the job ledger under the addon's data volume so a restart reports
 // in-flight downloads as failed rather than forgetting them (issue #515).
@@ -52,8 +53,8 @@ const app = createServer({ token, jobs });
 
 // Bun.serve, not a default export: the default-export form prints Bun's
 // "Started development server" banner, which reads wrong in production.
-Bun.serve({ port, fetch: app.fetch });
+Bun.serve({ hostname, port, fetch: app.fetch });
 console.log(
-  `yt-dlp addon listening on :${port} (data ${dirs.dataDir}, downloads ${dirs.downloadsDir}, ` +
+  `yt-dlp addon listening on ${hostname}:${port} (data ${dirs.dataDir}, downloads ${dirs.downloadsDir}, ` +
     `JS runtime ${jsRuntime ? `bun:${jsRuntime}` : "yt-dlp default"})`,
 );
