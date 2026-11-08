@@ -36,6 +36,7 @@ RUN bun install --frozen-lockfile --production
 COPY src ./src
 
 ENV YTDLP_ADDON_BINARY=yt-dlp \
+    YTDLP_ADDON_DATA_DIR=/data \
     YTDLP_ADDON_DOWNLOADS_DIR=/data/downloads \
     YTDLP_ADDON_PORT=8586
 
