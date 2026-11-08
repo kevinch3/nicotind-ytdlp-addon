@@ -2,7 +2,8 @@ import { join } from "node:path";
 import { prepareDirs, resolveDirs } from "./paths.js";
 import { JobStore } from "./job-store.js";
 import { createServer } from "./server.js";
-import type { YtdlpConfig } from "./resolve.js";
+import { jsRuntimeFor, type YtdlpConfig } from "./resolve.js";
+import { spawnSync } from "node:child_process";
 
 const token = process.env.YTDLP_ADDON_TOKEN;
 if (!token) {
@@ -12,6 +13,15 @@ if (!token) {
   process.exit(1);
 }
 
+// Probed once: whether this yt-dlp can take Bun as its JS runtime (#1738).
+const jsRuntime = jsRuntimeFor(process.env, process.execPath, () => {
+  const r = spawnSync(process.env.YTDLP_ADDON_BINARY ?? "yt-dlp", ["--help"], {
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  return r.stdout ?? "";
+});
+
 const config = (): YtdlpConfig => ({
   binaryPath: process.env.YTDLP_ADDON_BINARY ?? "yt-dlp",
   cookiesFile: process.env.YTDLP_ADDON_COOKIES || undefined,
@@ -20,6 +30,7 @@ const config = (): YtdlpConfig => ({
   // in-process plugin used, so a compose that shares the network namespace works
   // with no extra config.
   potProviderUrl: process.env.POT_PROVIDER_URL || "http://127.0.0.1:4416",
+  jsRuntime,
 });
 
 // /data in Docker; the XDG data dir on bare metal, where /data is not writable
@@ -43,5 +54,6 @@ const app = createServer({ token, jobs });
 // "Started development server" banner, which reads wrong in production.
 Bun.serve({ port, fetch: app.fetch });
 console.log(
-  `yt-dlp addon listening on :${port} (data ${dirs.dataDir}, downloads ${dirs.downloadsDir})`,
+  `yt-dlp addon listening on :${port} (data ${dirs.dataDir}, downloads ${dirs.downloadsDir}, ` +
+    `JS runtime ${jsRuntime ? `bun:${jsRuntime}` : "yt-dlp default"})`,
 );

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { buildArgs, runYtdlp } from "./resolve.js";
+import { buildArgs, jsRuntimeFor, runYtdlp } from "./resolve.js";
 
 /**
  * A fake yt-dlp: writes `lines` to stdout, runs `writeTo` (dropping files into
@@ -81,6 +81,46 @@ describe("buildArgs", () => {
     // --print implies --quiet, which would silence "Downloading playlist:" / "item N of M".
     expect(args).toContain("--no-quiet");
     expect(args).toContain("--newline");
+  });
+});
+
+// NicotinD #1738: YouTube needs a JS runtime and the EJS challenge solver. The
+// image ships Deno (yt-dlp's default); a bare-metal install usually has only the
+// Bun this addon runs on, and without it formats go missing and the n challenge
+// fails.
+describe("buildArgs — JS runtime", () => {
+  it("enables the given Bun and lets yt-dlp fetch the EJS solver from npm", () => {
+    const args = buildArgs("u", "/stage", { binaryPath: "yt-dlp", jsRuntime: "/home/u/.bun/bin/bun" });
+    const at = args.indexOf("--js-runtimes");
+    expect(args[at + 1]).toBe("bun:/home/u/.bun/bin/bun");
+    const rc = args.indexOf("--remote-components");
+    expect(args[rc + 1]).toBe("ejs:npm");
+  });
+
+  it("adds nothing when no runtime is configured (an older yt-dlp rejects the flags)", () => {
+    const args = buildArgs("u", "/stage", { binaryPath: "yt-dlp" });
+    expect(args).not.toContain("--js-runtimes");
+    expect(args).not.toContain("--remote-components");
+  });
+});
+
+describe("jsRuntimeFor", () => {
+  const help = (text: string) => () => text;
+
+  it("offers this process's Bun when yt-dlp knows --js-runtimes", () => {
+    expect(
+      jsRuntimeFor({}, "/bin/bun", help("  --js-runtimes RUNTIME[:PATH]\n  --remote-components")),
+    ).toBe("/bin/bun");
+  });
+
+  it("offers nothing to a yt-dlp that predates the flag", () => {
+    expect(jsRuntimeFor({}, "/bin/bun", help("  --format FORMAT"))).toBeUndefined();
+  });
+
+  it("honours YTDLP_ADDON_JS_RUNTIME: a path, or none", () => {
+    const h = help("--js-runtimes --remote-components");
+    expect(jsRuntimeFor({ YTDLP_ADDON_JS_RUNTIME: "/opt/bun" }, "/bin/bun", h)).toBe("/opt/bun");
+    expect(jsRuntimeFor({ YTDLP_ADDON_JS_RUNTIME: "none" }, "/bin/bun", h)).toBeUndefined();
   });
 });
 

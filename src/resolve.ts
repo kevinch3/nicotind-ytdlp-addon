@@ -26,6 +26,34 @@ export interface YtdlpConfig {
   format?: string;
   /** bgutil PO-token provider base URL (the sidecar). */
   potProviderUrl?: string;
+  /** A Bun binary yt-dlp may use as its JS runtime (see jsRuntimeFor). */
+  jsRuntime?: string;
+}
+
+/**
+ * The JS runtime to hand yt-dlp, or undefined for none (NicotinD #1738).
+ *
+ * YouTube needs one plus the EJS challenge solver. The image ships Deno, which
+ * yt-dlp enables by default; a bare-metal install usually has only the Bun this
+ * addon runs on. So offer that Bun (`process.execPath`), unless
+ * YTDLP_ADDON_JS_RUNTIME names another or says `none`, and only to a yt-dlp
+ * whose `--help` lists `--js-runtimes`: an older one rejects unknown flags.
+ */
+export function jsRuntimeFor(
+  env: Record<string, string | undefined>,
+  execPath: string,
+  ytdlpHelp: () => string,
+): string | undefined {
+  const wanted = env.YTDLP_ADDON_JS_RUNTIME;
+  if (wanted === "none") return undefined;
+  let help = "";
+  try {
+    help = ytdlpHelp();
+  } catch {
+    return undefined;
+  }
+  if (!help.includes("--js-runtimes") || !help.includes("--remote-components")) return undefined;
+  return wanted || execPath;
 }
 
 export interface ResolveDeps {
@@ -131,6 +159,11 @@ export function buildArgs(
   if (cfg.format) args.push("--format", cfg.format);
   if (cfg.cookiesFile && existsSync(cfg.cookiesFile))
     args.push("--cookies", cfg.cookiesFile);
+  if (cfg.jsRuntime) {
+    // ejs:npm lets yt-dlp fetch the solver through the runtime; ejs:github
+    // (Node's only source) fails whenever GitHub release downloads do.
+    args.push("--js-runtimes", `bun:${cfg.jsRuntime}`, "--remote-components", "ejs:npm");
+  }
   if (cfg.potProviderUrl) {
     args.push(
       "--extractor-args",

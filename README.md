@@ -95,6 +95,13 @@ bun install
 YTDLP_ADDON_TOKEN=<a-long-random-secret> bun run start
 ```
 
+YouTube needs a JavaScript runtime and its challenge solver. The image ships Deno; without
+Docker the addon hands yt-dlp the Bun it runs on (`--js-runtimes bun:<path>` plus
+`--remote-components ejs:npm`, which fetches the solver from npm), provided your yt-dlp is
+recent enough to list `--js-runtimes` in its `--help`. The startup line says which runtime it
+picked. yt-dlp may warn that a Bun newer than the versions it has tested is "not supported";
+resolves still work.
+
 State goes to `$XDG_DATA_HOME/nicotind-ytdlp-addon` (`~/.local/share/nicotind-ytdlp-addon`)
 when `/data` isn't writable; set `YTDLP_ADDON_DATA_DIR` to put it elsewhere. To keep it running,
 a systemd user unit like NicotinD's own works the same way
@@ -112,6 +119,7 @@ a systemd user unit like NicotinD's own works the same way
 | `YTDLP_ADDON_DATA_DIR`      | —        | `/data`, else `~/.local/share/nicotind-ytdlp-addon` | job ledger (`jobs.db`), survives restarts |
 | `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `<data dir>/downloads`  | staging dir                                       |
 | `YTDLP_ADDON_PORT`          | —        | `8586`                  | HTTP listen port                                  |
+| `YTDLP_ADDON_JS_RUNTIME`    | —        | this process's Bun      | Bun binary yt-dlp uses for YouTube's JS challenges; `none` keeps yt-dlp's default (Deno) |
 
 Only `GET /addon/v1/manifest` and `GET /addon/v1/health` are unauthenticated; every other route
 needs the bearer token.
