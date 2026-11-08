@@ -92,8 +92,12 @@ two-line wrapper script that does that.
 
 ```bash
 bun install
-YTDLP_ADDON_TOKEN=<a-long-random-secret> bun run start
+YTDLP_ADDON_TOKEN=<a-long-random-secret> YTDLP_ADDON_HOST=127.0.0.1 bun run start
 ```
+
+`YTDLP_ADDON_HOST=127.0.0.1` keeps it reachable only from this machine, which is all a
+NicotinD on the same host needs. Register it under **Extensions → Add a remote addon** with
+`http://127.0.0.1:8586` and the same token.
 
 YouTube needs a JavaScript runtime and its challenge solver. The image ships Deno; without
 Docker the addon hands yt-dlp the Bun it runs on (`--js-runtimes bun:<path>` plus
@@ -119,6 +123,7 @@ a systemd user unit like NicotinD's own works the same way
 | `YTDLP_ADDON_DATA_DIR`      | —        | `/data`, else `~/.local/share/nicotind-ytdlp-addon` | job ledger (`jobs.db`), survives restarts |
 | `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `<data dir>/downloads`  | staging dir                                       |
 | `YTDLP_ADDON_PORT`          | —        | `8586`                  | HTTP listen port                                  |
+| `YTDLP_ADDON_HOST`          | —        | `0.0.0.0`               | Listen address; `127.0.0.1` when NicotinD runs on the same host (keeps it off the LAN) |
 | `YTDLP_ADDON_JS_RUNTIME`    | —        | this process's Bun      | Bun binary yt-dlp uses for YouTube's JS challenges; `none` keeps yt-dlp's default (Deno) |
 
 Only `GET /addon/v1/manifest` and `GET /addon/v1/health` are unauthenticated; every other route
