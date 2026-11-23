@@ -1,10 +1,18 @@
 import { Hono } from "hono";
 import { YTDLP_MANIFEST } from "./manifest.js";
 import type { JobStore } from "./job-store.js";
+import type { CookieStore } from "./cookies.js";
+
+/** What core may change over `PUT config` (the manifest's configFields). */
+export interface AddonSettings {
+  format?: string;
+}
 
 export interface ServerDeps {
   token: string;
   jobs: JobStore;
+  cookies?: CookieStore;
+  settings?: AddonSettings;
 }
 
 /**
@@ -29,8 +37,28 @@ export function createServer(deps: ServerDeps): Hono {
     return next();
   });
 
-  app.get("/addon/v1/status", (c) => c.json([]));
-  app.put("/addon/v1/config", (c) => c.body(null, 204));
+  app.get("/addon/v1/status", (c) =>
+    c.json(
+      deps.cookies
+        ? [{ key: "cookies", label: "YouTube cookies", value: deps.cookies.describe() }]
+        : [],
+    ),
+  );
+
+  // Core pushes its stored config on every (re-)init and on each save. It used
+  // to be acknowledged and dropped, so a value typed on the Plugins page never
+  // reached yt-dlp (NicotinD #2068).
+  app.put("/addon/v1/config", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    if (deps.settings && typeof body.format === "string") {
+      deps.settings.format = body.format.trim() || undefined;
+    }
+    if (deps.cookies && typeof body.cookies === "string") {
+      const applied = deps.cookies.apply(body.cookies);
+      if (!applied.ok) return c.json({ error: `cookies rejected: ${applied.reason}` }, 400);
+    }
+    return c.body(null, 204);
+  });
 
   app.post("/addon/v1/jobs", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {

@@ -119,7 +119,7 @@ a systemd user unit like NicotinD's own works the same way
 | `POT_PROVIDER_URL`          | —        | `http://127.0.0.1:4416` | bgutil PO-token provider sidecar base URL         |
 | `YTDLP_ADDON_BINARY`        | —        | `yt-dlp`                | yt-dlp binary path                                |
 | `YTDLP_ADDON_FORMAT`        | —        | —                       | yt-dlp format selector                            |
-| `YTDLP_ADDON_COOKIES`       | —        | —                       | Netscape cookies.txt path (unblocks a flagged IP) |
+| `YTDLP_ADDON_COOKIES`       | —        | —                       | Netscape cookies.txt path, used when none was pasted in Settings (see below) |
 | `YTDLP_ADDON_DATA_DIR`      | —        | `/data`, else `~/.local/share/nicotind-ytdlp-addon` | job ledger (`jobs.db`), survives restarts |
 | `YTDLP_ADDON_DOWNLOADS_DIR` | —        | `<data dir>/downloads`  | staging dir                                       |
 | `YTDLP_ADDON_PORT`          | —        | `8586`                  | HTTP listen port                                  |
@@ -128,6 +128,25 @@ a systemd user unit like NicotinD's own works the same way
 
 Only `GET /addon/v1/manifest` and `GET /addon/v1/health` are unauthenticated; every other route
 needs the bearer token.
+
+## "Sign in to confirm you're not a bot"
+
+YouTube refuses the *player request* for some videos, or for every video from a flagged IP. The
+PO-token sidecar cannot help: a PO token only applies to the media fetch that comes after the player
+request, so yt-dlp never gets far enough to use one. The fix is a signed-in session (NicotinD #2068).
+
+**From the app** (Settings → Extensions → yt-dlp → *YouTube cookies*): in a private browser window,
+sign in to YouTube with a spare Google account, open `youtube.com/robots.txt` in that same tab,
+export its cookies as `cookies.txt` (Netscape format), close the window, and paste the whole file.
+The field is write-only. The addon validates the paste, stores it at `<data dir>/cookies.txt` (0600),
+and shows the result in the card's *YouTube cookies* status row, either as a count of cookies or as
+the reason a paste was rejected. The textarea needs a NicotinD core with `multiline` config fields;
+on an older core the input drops the newlines and the addon rejects the paste.
+
+yt-dlp writes rotated cookies back to that file after each run, and core re-pushes its stored config
+on every boot. A re-push of the *same* paste is therefore ignored (its hash is kept beside the file),
+and only a new paste replaces the jar. With nothing pasted, `YTDLP_ADDON_COOKIES` (a file path) is
+used, and the status row says when that path does not exist.
 
 ## Develop
 

@@ -2,7 +2,8 @@ import { join } from "node:path";
 import { prepareDirs, resolveDirs } from "./paths.js";
 import { listenAddress } from "./listen.js";
 import { JobStore } from "./job-store.js";
-import { createServer } from "./server.js";
+import { createServer, type AddonSettings } from "./server.js";
+import { CookieStore } from "./cookies.js";
 import { jsRuntimeFor, type YtdlpConfig } from "./resolve.js";
 import { spawnSync } from "node:child_process";
 
@@ -23,17 +24,6 @@ const jsRuntime = jsRuntimeFor(process.env, process.execPath, () => {
   return r.stdout ?? "";
 });
 
-const config = (): YtdlpConfig => ({
-  binaryPath: process.env.YTDLP_ADDON_BINARY ?? "yt-dlp",
-  cookiesFile: process.env.YTDLP_ADDON_COOKIES || undefined,
-  format: process.env.YTDLP_ADDON_FORMAT || undefined,
-  // The bgutil provider sidecar. Defaults to the shared-netns local URL the
-  // in-process plugin used, so a compose that shares the network namespace works
-  // with no extra config.
-  potProviderUrl: process.env.POT_PROVIDER_URL || "http://127.0.0.1:4416",
-  jsRuntime,
-});
-
 // /data in Docker; the XDG data dir on bare metal, where /data is not writable
 // and the ledger used to crash the boot with SQLITE_CANTOPEN (NicotinD #1737).
 const dirs = resolveDirs(process.env);
@@ -43,13 +33,28 @@ try {
   console.error(`yt-dlp addon: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 }
+// Settings core pushes over PUT config win over the env; blank falls back.
+const settings: AddonSettings = {};
+const cookies = new CookieStore(dirs.dataDir, process.env.YTDLP_ADDON_COOKIES || undefined);
+
+const config = (): YtdlpConfig => ({
+  binaryPath: process.env.YTDLP_ADDON_BINARY ?? "yt-dlp",
+  cookiesFile: cookies.path(),
+  format: settings.format ?? (process.env.YTDLP_ADDON_FORMAT || undefined),
+  // The bgutil provider sidecar. Defaults to the shared-netns local URL the
+  // in-process plugin used, so a compose that shares the network namespace works
+  // with no extra config.
+  potProviderUrl: process.env.POT_PROVIDER_URL || "http://127.0.0.1:4416",
+  jsRuntime,
+});
+
 const stagingBase = dirs.downloadsDir;
 const { hostname, port } = listenAddress(process.env);
 
 // Persist the job ledger under the addon's data volume so a restart reports
 // in-flight downloads as failed rather than forgetting them (issue #515).
 const jobs = new JobStore(stagingBase, config, {}, join(dirs.dataDir, "jobs.db"));
-const app = createServer({ token, jobs });
+const app = createServer({ token, jobs, cookies, settings });
 
 // Bun.serve, not a default export: the default-export form prints Bun's
 // "Started development server" banner, which reads wrong in production.
