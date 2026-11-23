@@ -1,10 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fakeSpawn } from "./resolve.test.js";
 import { JobStore } from "./job-store.js";
-import { createServer } from "./server.js";
+import { createServer, type AddonSettings } from "./server.js";
+import { CookieStore } from "./cookies.js";
 
 const TOKEN = "test-token";
 
@@ -129,5 +130,62 @@ describe("ytdlp addon server", () => {
       headers: auth,
     });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("PUT config (NicotinD #2068: it used to be acknowledged and dropped)", () => {
+  const JAR = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tabc\n";
+
+  function configApp() {
+    const dir = mkdtempSync(join(tmpdir(), "ytdlp-cfg-"));
+    const cookies = new CookieStore(dir);
+    const settings: AddonSettings = {};
+    const jobs = new JobStore(dir, () => ({ binaryPath: "yt-dlp" }), {}, ":memory:", () => {});
+    return { app: createServer({ token: TOKEN, jobs, cookies, settings }), dir, cookies, settings };
+  }
+
+  const put = (app: ReturnType<typeof configApp>["app"], body: unknown) =>
+    app.request("/addon/v1/config", {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("stores pasted cookies and the format selector", async () => {
+    const { app, dir, cookies, settings } = configApp();
+    expect((await put(app, { cookies: JAR, format: " bestaudio " })).status).toBe(204);
+    expect(readFileSync(join(dir, "cookies.txt"), "utf8")).toContain("SID\tabc");
+    expect(cookies.path()).toBe(join(dir, "cookies.txt"));
+    expect(settings.format).toBe("bestaudio");
+  });
+
+  it("400s a paste that is not a cookies.txt, so core logs the push as failed", async () => {
+    const { app, cookies } = configApp();
+    const res = await put(app, { cookies: "SID=abc; HSID=def" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("cookies rejected");
+    expect(cookies.path()).toBeUndefined();
+  });
+
+  it("reports the cookie state as a status row", async () => {
+    const { app } = configApp();
+    await put(app, { cookies: JAR });
+    const rows = (await (await app.request("/addon/v1/status", { headers: auth })).json()) as {
+      key: string;
+      label: string;
+      value: string;
+    }[];
+    expect(rows).toEqual([
+      { key: "cookies", label: "YouTube cookies", value: "1 YouTube cookies (1 total), pasted in Settings" },
+    ]);
+  });
+
+  it("declares the cookies field as a write-only multiline secret with help text", async () => {
+    const m = (await (await configApp().app.request("/addon/v1/manifest")).json()) as {
+      configFields: { key: string; type: string; multiline?: boolean; help?: string }[];
+    };
+    const field = m.configFields.find((f) => f.key === "cookies");
+    expect(field).toMatchObject({ type: "password", multiline: true });
+    expect(field?.help).toContain("not a bot");
   });
 });
