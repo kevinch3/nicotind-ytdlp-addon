@@ -28,7 +28,9 @@ ARG BGUTIL_VERSION=1.3.1
 RUN test -n "${YTDLP_VERSION}" || { echo "YTDLP_VERSION build-arg is required (see ci.yml)"; exit 1; } \
   && pip3 install --no-cache-dir --break-system-packages --upgrade \
   "yt-dlp==${YTDLP_VERSION}" \
-  "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}"
+  "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}" \
+  "mutagen==1.47.0"
+# mutagen: yt-dlp embeds a cover into opus/ogg only through it (#4).
 
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml tsconfig.json ./

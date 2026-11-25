@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { buildArgs, jsRuntimeFor, runYtdlp } from "./resolve.js";
+import { buildArgs, isAlbumPlaylist, jsRuntimeFor, runYtdlp } from "./resolve.js";
 
 /**
  * A fake yt-dlp: writes `lines` to stdout, runs `writeTo` (dropping files into
@@ -293,5 +293,46 @@ describe.skipIf(!Bun.which("yt-dlp"))("what yt-dlp makes of a video's metadata",
 
   it("leaves the date to the embed when there is no release year", () => {
     expect(read({ title: "A - B" }).metaDate).toBe("NA");
+  });
+});
+
+// #4: a YouTube category is not a genre, and only an album playlist's position
+// is a track number and its thumbnail a cover. Proven against yt-dlp 2026.03.17
+// offline (MetadataParser + FFmpegMetadata on synthetic info, and a file:// run
+// through ThumbnailsConvertor + EmbedThumbnail): categories ["Music"] → no genre
+// tag, track_number outranks playlist_index, a 1280x720 thumbnail → 720x720 cover.
+describe("buildArgs — genre, track number, cover (#4)", () => {
+  const ALBUM = "https://music.youtube.com/playlist?list=OLAK5uy_abc";
+  const pairAfter = (args: string[], flag: string) =>
+    args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
+
+  it("writes the real genre or none, never YouTube's category", () => {
+    const args = buildArgs("https://youtube.com/watch?v=x", "/stage", { binaryPath: "yt-dlp" });
+    expect(pairAfter(args, "--parse-metadata")).toContain("%(genre,genres|)s:(?P<meta_genre>.*)");
+  });
+
+  it("an album playlist falls back to the playlist position and embeds the square cover", () => {
+    const args = buildArgs(ALBUM, "/stage", { binaryPath: "yt-dlp" });
+    expect(pairAfter(args, "--parse-metadata")).toContain(
+      "%(track_number,playlist_index|)s:(?P<meta_track>.+)",
+    );
+    expect(args).toContain("--embed-thumbnail");
+    expect(pairAfter(args, "--convert-thumbnails")).toEqual(["png"]);
+    expect(pairAfter(args, "--ppa")[0]).toContain(`crop="'min(iw,ih)':'min(iw,ih)'"`);
+  });
+
+  it("a video or a user playlist gets neither", () => {
+    for (const url of ["https://youtube.com/watch?v=x", "https://youtube.com/playlist?list=PLabc"]) {
+      const args = buildArgs(url, "/stage", { binaryPath: "yt-dlp" });
+      expect(args).not.toContain("--embed-thumbnail");
+      expect(args.join(" ")).not.toContain("playlist_index");
+    }
+  });
+
+  it("isAlbumPlaylist reads the list id, and a non-URL is not one", () => {
+    expect(isAlbumPlaylist(ALBUM)).toBe(true);
+    expect(isAlbumPlaylist("https://www.youtube.com/watch?v=a&list=OLAK5uy_x")).toBe(true);
+    expect(isAlbumPlaylist("https://youtube.com/playlist?list=PLx")).toBe(false);
+    expect(isAlbumPlaylist("not a url")).toBe(false);
   });
 });
