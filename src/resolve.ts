@@ -94,6 +94,29 @@ export interface RunningResolve {
   cancel: () => boolean;
 }
 
+/**
+ * A YouTube Music album is a playlist whose id starts `OLAK5uy_`. Its items are
+ * the album's tracks in order and each video's thumbnail is the album cover, so
+ * only there is the playlist position a track number and the thumbnail a cover.
+ * A user playlist's position and a video frame are neither (#4).
+ */
+export function isAlbumPlaylist(url: string): boolean {
+  try {
+    return new URL(url).searchParams.get("list")?.startsWith("OLAK5uy_") === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Center-crops a letterboxed YouTube thumbnail to the square cover inside it.
+ * The double quotes keep the filter's single quotes through yt-dlp's shlex
+ * split, and the single quotes keep its commas from ffmpeg's filter parser. The
+ * target is PNG because the convertor skips a thumbnail already in the target
+ * format, and YouTube serves webp and jpg, never png, so the crop always runs.
+ */
+const SQUARE_COVER = `ThumbnailsConvertor+ffmpeg_o:-vf crop="'min(iw,ih)':'min(iw,ih)'"`;
+
 /** The performer, for paths and progress: never yt-dlp's comma-joined `artist`. */
 const TRACK_ARTIST = "%(artists.0,artist,uploader)s";
 
@@ -113,6 +136,12 @@ const TRACK_ARTIST = "%(artists.0,artist,uploader)s";
  *   hyphens, or `Jay-Z - 99 Problems` would lose its artist.
  * - The release year outranks YouTube's upload date, which is what the embed would
  *   otherwise write as the date.
+ * - The genre tag is the music genre or nothing. The embed falls back from `genre`
+ *   to YouTube's `categories` (`Music`, `Entertainment`), and core treats a present
+ *   genre as resolved, so a category is worse than none (#4): `meta_genre` is the
+ *   real genre when there is one and empty otherwise, and an empty value clears it.
+ * - On an album playlist the track number falls back to the playlist position,
+ *   and the square cover is embedded (see `isAlbumPlaylist`).
  * Each `|` default is empty so a field that is absent matches nothing and writes
  * nothing, instead of a literal `NA`.
  *
@@ -146,6 +175,8 @@ export function buildArgs(
     "%(artists.0|)s:(?P<meta_artist>.+)",
     "--parse-metadata",
     "%(release_year|)s:(?P<meta_date>.+)",
+    "--parse-metadata",
+    "%(genre,genres|)s:(?P<meta_genre>.*)",
     "--embed-metadata",
     "--paths",
     stagingDir,
@@ -156,6 +187,17 @@ export function buildArgs(
     "--print",
     `after_move:TRACK_DONE::${TRACK_ARTIST} - %(title)s\t%(filepath)s`,
   ];
+  if (isAlbumPlaylist(url)) {
+    args.push(
+      "--parse-metadata",
+      "%(track_number,playlist_index|)s:(?P<meta_track>.+)",
+      "--embed-thumbnail",
+      "--convert-thumbnails",
+      "png",
+      "--ppa",
+      SQUARE_COVER,
+    );
+  }
   if (cfg.format) args.push("--format", cfg.format);
   if (cfg.cookiesFile && existsSync(cfg.cookiesFile))
     args.push("--cookies", cfg.cookiesFile);

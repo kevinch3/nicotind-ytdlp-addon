@@ -21,7 +21,10 @@ So a 1-of-16 playlist reads "1 of 16", `partial`, with yt-dlp's own `ERROR:` lin
 "Done 1 of 1" (NicotinD #585; the addon used to run with `stdio: 'ignore'` and glob staging).
 The embedded tags take the first of YouTube's credited `artists` (the rest are often composers, and
 yt-dlp would join them all into one artist), the release year over the upload date, and an `Artist -
-Title` split only when the left side is not bracketed (NicotinD #866).
+Title` split only when the left side is not bracketed (NicotinD #866). The genre tag is the music
+genre or nothing, never YouTube's category (`Music`), and on a YouTube Music album playlist
+(`list=OLAK5uy_…`) the track number falls back to the playlist position and the thumbnail is
+center-cropped to its square cover and embedded (#4).
 `--print` implies `--quiet`, so `--no-quiet` keeps the lines the title and count come from. Every
 yt-dlp line is also written to the addon's log, so `docker logs` has the transcript. Items flip
 `fileReady` and the bytes are served from `GET /addon/v1/jobs/:id/files/:itemId` — core's
